@@ -47,7 +47,6 @@ google-credentials.json
 
 # Build artifacts
 *.ipa
-*.apk
 *.aab
 
 # Logs
