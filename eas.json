@@ -13,6 +13,16 @@
     },
     "production": {
       "autoIncrement": true
+    },
+    "ios-free": {
+      "ios": {
+        "buildConfiguration": "Debug",
+        "distribution": "internal",
+        "autoIncrement": false
+      },
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {

@@ -23,7 +23,8 @@
       "bundleIdentifier": "com.cosminbegudev.receiptsapp",
       "infoPlist": {
         "NSCameraUsageDescription": "This app needs access to camera to take receipt photos.",
-        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to save receipt photos."
+        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to save receipt photos.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
