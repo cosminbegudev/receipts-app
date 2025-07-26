@@ -35,16 +35,21 @@ This guide will walk you through setting up the Google Drive API for the Receipt
 
 1. Go to "APIs & Services" → "Credentials"
 2. Click "Create Credentials" → "OAuth 2.0 Client ID"
-3. Choose "Application type": **Mobile app**
-4. Enter name: "Receipt Manager Mobile App"
+3. Choose "Application type": **Desktop application**
+   - Note: We use "Desktop" instead of "Mobile" because mobile apps don't provide a client secret, which we need for server-side token refresh
+4. Enter name: "Receipt Manager Desktop App"
 5. Click "Create"
 6. **Save the Client ID and Client Secret** - you'll need these for the app
 
 ## Step 5: Set Up Redirect URI
 
-For mobile apps, you can use a custom scheme. In the app configuration, we'll use:
+For desktop applications, you can use the standard OAuth redirect URI:
 ```
-com.yourcompany.receiptsapp://oauth
+http://localhost
+```
+Or use the special "out-of-band" URI:
+```
+urn:ietf:wg:oauth:2.0:oob
 ```
 
 ## Step 6: Generate Refresh Token
@@ -66,17 +71,19 @@ Since this is a mobile app for personal use, you'll need to generate a refresh t
 
 ### Option B: Using curl (Advanced)
 
-1. Get authorization code:
-   ```bash
+1. Get authorization code by visiting this URL in your browser:
+   ```
    https://accounts.google.com/o/oauth2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=urn:ietf:wg:oauth:2.0:oob&scope=https://www.googleapis.com/auth/drive.file&response_type=code&access_type=offline&prompt=consent
    ```
+   - Replace `YOUR_CLIENT_ID` with your actual Client ID
+   - After authorization, you'll get a code on the page
 
-2. Exchange for refresh token:
+2. Exchange authorization code for refresh token:
    ```bash
    curl -X POST https://oauth2.googleapis.com/token \
      -d "client_id=YOUR_CLIENT_ID" \
      -d "client_secret=YOUR_CLIENT_SECRET" \
-     -d "code=AUTHORIZATION_CODE" \
+     -d "code=AUTHORIZATION_CODE_FROM_STEP_1" \
      -d "grant_type=authorization_code" \
      -d "redirect_uri=urn:ietf:wg:oauth:2.0:oob"
    ```
@@ -85,10 +92,16 @@ Since this is a mobile app for personal use, you'll need to generate a refresh t
 
 Open the Receipt Manager app and go to Settings. Enter:
 
-1. **Client ID**: From Step 4
-2. **Client Secret**: From Step 4  
-3. **Redirect URI**: `com.yourcompany.receiptsapp://oauth`
+1. **Client ID**: From Step 4 (the desktop application Client ID)
+2. **Client Secret**: From Step 4 (the desktop application Client Secret)
+3. **Redirect URI**: `urn:ietf:wg:oauth:2.0:oob` (or `http://localhost` if you prefer)
 4. **Refresh Token**: From Step 6
+
+**Note**: Even though we're building a mobile app, we use desktop OAuth credentials because:
+- Desktop apps provide both Client ID and Client Secret
+- Mobile apps only provide Client ID (no secret)
+- We need the Client Secret for secure server-side token refresh
+- This is a common pattern for mobile apps that need offline access
 
 ## Step 8: Test the Integration
 
@@ -110,6 +123,7 @@ Open the Receipt Manager app and go to Settings. Enter:
 - Only share these credentials with trusted devices/users
 - Consider rotating credentials periodically
 - The app only requests `drive.file` scope, which limits access to files created by the app
+- **Desktop OAuth Pattern**: We use desktop OAuth credentials for a mobile app because mobile OAuth doesn't provide client secrets, which are required for secure token refresh
 
 ## Troubleshooting
 
