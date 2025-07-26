@@ -3,7 +3,8 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
+node_modules_cache/
+node_modules
 # Expo
 .expo/
 dist/
@@ -61,3 +62,7 @@ pids
 # Temporary folders
 tmp/
 temp/
+
+
+client_secret_130886757579-qmk2ck8ebg88vk4rid19i6qh0fll8aif.apps.googleusercontent.com.json
+client_130886757579-4ppdq37v6f4a42kobr22ukl8qq3o0e3u.apps.googleusercontent.com.plist

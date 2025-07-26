@@ -10,7 +10,7 @@ import {
   ScrollView,
   StatusBar,
 } from 'react-native';
-import { Camera, CameraType } from 'expo-camera';
+import { Camera, CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,8 +25,8 @@ interface ApiKeys {
 }
 
 export default function App() {
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [cameraRef, setCameraRef] = useState<Camera | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [cameraRef, setCameraRef] = useState<CameraView | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
@@ -41,9 +41,8 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const { status } = await Camera.requestCameraPermissionsAsync();
       const mediaLibraryStatus = await MediaLibrary.requestPermissionsAsync();
-      setHasPermission(status === 'granted' && mediaLibraryStatus.status === 'granted');
+      // Camera permissions are now handled by useCameraPermissions hook
       
       // Load API keys from storage
       await loadApiKeys();
@@ -133,7 +132,7 @@ export default function App() {
     }
   };
 
-  if (hasPermission === null) {
+  if (!permission) {
     return (
       <View style={styles.container}>
         <Text>Requesting permissions...</Text>
@@ -141,10 +140,13 @@ export default function App() {
     );
   }
 
-  if (hasPermission === false) {
+  if (!permission.granted) {
     return (
       <View style={styles.container}>
-        <Text style={styles.text}>No access to camera</Text>
+        <Text style={styles.text}>Camera permission required</Text>
+        <TouchableOpacity onPress={requestPermission} style={styles.cameraButton}>
+          <Text style={styles.buttonText}>Grant Permission</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -178,9 +180,9 @@ export default function App() {
       {/* Camera Modal */}
       <Modal visible={showCamera} animationType="slide">
         <View style={styles.cameraContainer}>
-          <Camera
+          <CameraView
             style={styles.camera}
-            type={CameraType.back}
+            facing="back"
             ref={setCameraRef}
           >
             <View style={styles.cameraControls}>
@@ -198,7 +200,7 @@ export default function App() {
                 <Text style={styles.captureButtonText}>📷</Text>
               </TouchableOpacity>
             </View>
-          </Camera>
+          </CameraView>
         </View>
       </Modal>
 
