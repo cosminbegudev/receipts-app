@@ -263,55 +263,41 @@ export class GoogleDriveService {
         return []; // No receipts folder exists yet
       }
 
-      // Search for all files in receipts folder and subfolders
-      const query = `'${receiptsId}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed=false`;
-      
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,size,webViewLink,thumbnailLink,createdTime,parents)&orderBy=createdTime desc`,
+      // Get all year folders
+      const yearQuery = `'${receiptsId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+      const yearResponse = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(yearQuery)}&fields=files(id,name)`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
           },
         }
       );
+      const yearData = await yearResponse.json();
 
-      const data = await response.json();
-      
-      if (!data.files) {
-        return [];
+      if (!yearData.files || yearData.files.length === 0) {
+        return []; // No year folders exist yet
       }
 
-      // Process files to extract description and organize by date
       const receipts = [];
-      
-      for (const file of data.files) {
-        // Get year folders
-        const yearQuery = `'${receiptsId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-        const yearResponse = await fetch(
-          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(yearQuery)}&fields=files(id,name)`,
+
+      // For each year folder, get month folders and their files
+      for (const yearFolder of yearData.files) {
+        // Get month folders in this year
+        const monthQuery = `'${yearFolder.id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+        const monthResponse = await fetch(
+          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(monthQuery)}&fields=files(id,name)`,
           {
             headers: {
               'Authorization': `Bearer ${accessToken}`,
             },
           }
         );
-        const yearData = await yearResponse.json();
+        const monthData = await monthResponse.json();
 
-        for (const yearFolder of yearData.files || []) {
-          // Get month folders
-          const monthQuery = `'${yearFolder.id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-          const monthResponse = await fetch(
-            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(monthQuery)}&fields=files(id,name)`,
-            {
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-              },
-            }
-          );
-          const monthData = await monthResponse.json();
-
-          for (const monthFolder of monthData.files || []) {
-            // Get files in this month folder
+        if (monthData.files && monthData.files.length > 0) {
+          // For each month folder, get all receipt files
+          for (const monthFolder of monthData.files) {
             const filesQuery = `'${monthFolder.id}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed=false`;
             const filesResponse = await fetch(
               `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(filesQuery)}&fields=files(id,name,mimeType,size,webViewLink,thumbnailLink,createdTime)&orderBy=createdTime desc`,
@@ -323,26 +309,31 @@ export class GoogleDriveService {
             );
             const filesData = await filesResponse.json();
 
-            for (const file of filesData.files || []) {
-              // Extract description from filename
-              const fileName = file.name;
-              const description = fileName.split('_')[0].replace(/[_]/g, ' ') || 'Receipt';
-              
-              receipts.push({
-                id: file.id,
-                name: fileName,
-                description: description,
-                date: file.createdTime,
-                webViewLink: file.webViewLink,
-                thumbnailLink: file.thumbnailLink,
-                mimeType: file.mimeType,
-                size: parseInt(file.size) || 0,
-              });
+            console.log(`Found ${filesData.files?.length || 0} files in ${yearFolder.name}/${monthFolder.name}`);
+
+            if (filesData.files && filesData.files.length > 0) {
+              for (const file of filesData.files) {
+                // Extract description from filename (everything before the first underscore)
+                const fileName = file.name;
+                const description = fileName.split('_')[0].replace(/[_-]/g, ' ') || 'Receipt';
+                
+                receipts.push({
+                  id: file.id,
+                  name: fileName,
+                  description: description,
+                  date: file.createdTime,
+                  webViewLink: file.webViewLink,
+                  thumbnailLink: file.thumbnailLink,
+                  mimeType: file.mimeType,
+                  size: parseInt(file.size) || 0,
+                });
+              }
             }
           }
         }
       }
 
+      console.log(`Total receipts found: ${receipts.length}`);
       return receipts;
     } catch (error) {
       console.error('Error listing receipts:', error);
