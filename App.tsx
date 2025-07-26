@@ -11,6 +11,7 @@ import {
   StatusBar,
   ActivityIndicator,
   FlatList,
+  Image,
 } from 'react-native';
 import { Camera, CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
@@ -39,6 +40,7 @@ interface Receipt {
   date: string;
   webViewLink: string;
   thumbnailLink?: string;
+  imageUrl: string;
   mimeType: string;
   size: number;
 }
@@ -50,6 +52,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
   const [showReceiptsList, setShowReceiptsList] = useState(false);
+  const [showImagePreview, setShowImagePreview] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [receiptDescription, setReceiptDescription] = useState('');
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -149,20 +153,8 @@ export default function App() {
   };
 
   const openReceipt = (receipt: Receipt) => {
-    Alert.alert(
-      'Open Receipt',
-      `Would you like to view "${receipt.description}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'View in Browser', 
-          onPress: () => {
-            // In a real app, you might use Linking.openURL or a WebView
-            Alert.alert('Info', `Receipt: ${receipt.description}\nDate: ${formatDate(receipt.date)}\nSize: ${formatFileSize(receipt.size)}`);
-          }
-        }
-      ]
-    );
+    setSelectedReceipt(receipt);
+    setShowImagePreview(true);
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -554,6 +546,58 @@ export default function App() {
               )}
             />
           )}
+        </View>
+      </Modal>
+
+      {/* Image Preview Modal */}
+      <Modal visible={showImagePreview} animationType="fade" transparent>
+        <View style={styles.imagePreviewOverlay}>
+          <View style={styles.imagePreviewContainer}>
+            <View style={styles.imagePreviewHeader}>
+              <TouchableOpacity
+                style={styles.closeImageButton}
+                onPress={() => setShowImagePreview(false)}
+              >
+                <Text style={styles.closeImageButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {selectedReceipt && (
+              <>
+                <View style={styles.imageContainer}>
+                  <Image
+                    source={{ uri: selectedReceipt.imageUrl }}
+                    style={styles.receiptImage}
+                    resizeMode="contain"
+                    onError={(error) => {
+                      console.error('Image load error:', error);
+                      Alert.alert('Error', 'Failed to load receipt image');
+                    }}
+                  />
+                </View>
+                
+                <View style={styles.imagePreviewInfo}>
+                  <Text style={styles.imagePreviewTitle}>{selectedReceipt.description}</Text>
+                  <Text style={styles.imagePreviewDate}>
+                    {formatDate(selectedReceipt.date)} • {formatFileSize(selectedReceipt.size)}
+                  </Text>
+                  
+                  <TouchableOpacity
+                    style={styles.viewInDriveButton}
+                    onPress={() => {
+                      Alert.alert(
+                        'Open in Google Drive',
+                        'This would open the receipt in Google Drive app or browser.',
+                        [{ text: 'OK' }]
+                      );
+                    }}
+                  >
+                    <Text style={styles.viewInDriveButtonText}>View in Google Drive</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
         </View>
       </Modal>
     </View>
@@ -972,5 +1016,78 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: '#cbd5e0',
     marginLeft: 8,
+  },
+  imagePreviewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePreviewContainer: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  imagePreviewHeader: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 1,
+  },
+  closeImageButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeImageButtonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  imageContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  receiptImage: {
+    width: '100%',
+    height: '80%',
+    borderRadius: 8,
+  },
+  imagePreviewInfo: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    padding: 20,
+    paddingBottom: 40,
+  },
+  imagePreviewTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  imagePreviewDate: {
+    color: '#cbd5e0',
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  viewInDriveButton: {
+    backgroundColor: '#667eea',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  viewInDriveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

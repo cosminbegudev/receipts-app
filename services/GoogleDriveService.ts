@@ -251,6 +251,7 @@ export class GoogleDriveService {
     date: string;
     webViewLink: string;
     thumbnailLink?: string;
+    imageUrl: string;
     mimeType: string;
     size: number;
   }>> {
@@ -317,6 +318,11 @@ export class GoogleDriveService {
                 const fileName = file.name;
                 const description = fileName.split('_')[0].replace(/[_-]/g, ' ') || 'Receipt';
                 
+                // Create a direct viewable image URL with access token
+                const imageUrl = `https://drive.google.com/uc?id=${file.id}&export=view`;
+                // Alternative: Use the thumbnail link if available, or webViewLink
+                const previewUrl = file.thumbnailLink || imageUrl;
+                
                 receipts.push({
                   id: file.id,
                   name: fileName,
@@ -324,6 +330,7 @@ export class GoogleDriveService {
                   date: file.createdTime,
                   webViewLink: file.webViewLink,
                   thumbnailLink: file.thumbnailLink,
+                  imageUrl: previewUrl,
                   mimeType: file.mimeType,
                   size: parseInt(file.size) || 0,
                 });
@@ -338,6 +345,36 @@ export class GoogleDriveService {
     } catch (error) {
       console.error('Error listing receipts:', error);
       throw error;
+    }
+  }
+
+  async getImageUrl(fileId: string): Promise<string> {
+    const accessToken = await this.getAccessToken();
+    
+    try {
+      // Get file metadata to confirm it exists and get a direct download link
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=webContentLink,thumbnailLink`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+      
+      // Return the thumbnail link if available, otherwise use a direct access URL
+      if (data.thumbnailLink) {
+        return data.thumbnailLink;
+      }
+      
+      // Fallback to a public view URL (this might require the file to be publicly viewable)
+      return `https://drive.google.com/uc?id=${fileId}&export=view`;
+    } catch (error) {
+      console.error('Error getting image URL:', error);
+      // Fallback URL
+      return `https://drive.google.com/uc?id=${fileId}&export=view`;
     }
   }
 }
