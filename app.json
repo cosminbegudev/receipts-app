@@ -6,7 +6,10 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -17,7 +20,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.receiptsapp",
+      "bundleIdentifier": "com.cosminbegudev.receiptsapp",
       "infoPlist": {
         "NSCameraUsageDescription": "This app needs access to camera to take receipt photos.",
         "NSPhotoLibraryUsageDescription": "This app needs access to photo library to save receipt photos."
@@ -28,12 +31,14 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       },
-      "package": "com.yourcompany.receiptsapp",
+      "package": "com.cosminbegudev.receiptsapp",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.INTERNET"
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_MEDIA_LOCATION"
       ]
     },
     "web": {
@@ -54,6 +59,11 @@
           "isAccessMediaLocationEnabled": true
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b81054eb-98e8-400a-9a34-fccaa629746a"
+      }
+    }
   }
 }
