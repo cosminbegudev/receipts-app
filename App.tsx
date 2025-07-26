@@ -153,8 +153,8 @@ export default function App() {
       await loadApiKeys();
       // Load statistics
       await loadStats();
-      // Load receipts for last receipt display
-      await loadReceipts();
+      // Don't load receipts on startup to avoid API key race condition
+      // Receipts will be loaded when needed (View Receipts button or Last Receipt card)
     })();
   }, []);
 
@@ -202,7 +202,7 @@ export default function App() {
 
   const loadReceipts = async () => {
     if (!apiKeys.clientId || !apiKeys.clientSecret || !apiKeys.refreshToken) {
-      Alert.alert('Error', 'Please configure Google Drive API keys in Settings first');
+      console.log('API keys not configured, skipping receipt loading');
       return;
     }
 
@@ -226,6 +226,14 @@ export default function App() {
     } finally {
       setLoadingReceipts(false);
     }
+  };
+
+  const loadReceiptsWithValidation = async () => {
+    if (!apiKeys.clientId || !apiKeys.clientSecret || !apiKeys.refreshToken) {
+      Alert.alert('Error', 'Please configure Google Drive API keys in Settings first');
+      return;
+    }
+    await loadReceipts();
   };
 
   const openReceipt = (receipt: Receipt) => {
@@ -463,7 +471,7 @@ export default function App() {
               style={styles.secondaryButton}
               onPress={() => {
                 setShowReceiptsList(true);
-                loadReceipts();
+                loadReceiptsWithValidation();
               }}
             >
               <Text style={styles.secondaryButtonIcon}>📁</Text>
