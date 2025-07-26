@@ -243,4 +243,110 @@ export class GoogleDriveService {
       throw error;
     }
   }
+
+  async listReceipts(): Promise<Array<{
+    id: string;
+    name: string;
+    description: string;
+    date: string;
+    webViewLink: string;
+    thumbnailLink?: string;
+    mimeType: string;
+    size: number;
+  }>> {
+    const accessToken = await this.getAccessToken();
+
+    try {
+      // Find receipts folder
+      const receiptsId = await this.findFolder('receipts');
+      if (!receiptsId) {
+        return []; // No receipts folder exists yet
+      }
+
+      // Search for all files in receipts folder and subfolders
+      const query = `'${receiptsId}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed=false`;
+      
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,size,webViewLink,thumbnailLink,createdTime,parents)&orderBy=createdTime desc`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+      
+      if (!data.files) {
+        return [];
+      }
+
+      // Process files to extract description and organize by date
+      const receipts = [];
+      
+      for (const file of data.files) {
+        // Get year folders
+        const yearQuery = `'${receiptsId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+        const yearResponse = await fetch(
+          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(yearQuery)}&fields=files(id,name)`,
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+            },
+          }
+        );
+        const yearData = await yearResponse.json();
+
+        for (const yearFolder of yearData.files || []) {
+          // Get month folders
+          const monthQuery = `'${yearFolder.id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+          const monthResponse = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(monthQuery)}&fields=files(id,name)`,
+            {
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+              },
+            }
+          );
+          const monthData = await monthResponse.json();
+
+          for (const monthFolder of monthData.files || []) {
+            // Get files in this month folder
+            const filesQuery = `'${monthFolder.id}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed=false`;
+            const filesResponse = await fetch(
+              `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(filesQuery)}&fields=files(id,name,mimeType,size,webViewLink,thumbnailLink,createdTime)&orderBy=createdTime desc`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                },
+              }
+            );
+            const filesData = await filesResponse.json();
+
+            for (const file of filesData.files || []) {
+              // Extract description from filename
+              const fileName = file.name;
+              const description = fileName.split('_')[0].replace(/[_]/g, ' ') || 'Receipt';
+              
+              receipts.push({
+                id: file.id,
+                name: fileName,
+                description: description,
+                date: file.createdTime,
+                webViewLink: file.webViewLink,
+                thumbnailLink: file.thumbnailLink,
+                mimeType: file.mimeType,
+                size: parseInt(file.size) || 0,
+              });
+            }
+          }
+        }
+      }
+
+      return receipts;
+    } catch (error) {
+      console.error('Error listing receipts:', error);
+      throw error;
+    }
+  }
 }

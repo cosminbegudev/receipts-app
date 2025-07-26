@@ -9,6 +9,8 @@ import {
   Modal,
   ScrollView,
   StatusBar,
+  ActivityIndicator,
+  FlatList,
 } from 'react-native';
 import { Camera, CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
@@ -30,14 +32,28 @@ interface ReceiptStats {
   lastReceiptDate: string | null;
 }
 
+interface Receipt {
+  id: string;
+  name: string;
+  description: string;
+  date: string;
+  webViewLink: string;
+  thumbnailLink?: string;
+  mimeType: string;
+  size: number;
+}
+
 export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraRef, setCameraRef] = useState<CameraView | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+  const [showReceiptsList, setShowReceiptsList] = useState(false);
   const [receiptDescription, setReceiptDescription] = useState('');
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [loadingReceipts, setLoadingReceipts] = useState(false);
   const [stats, setStats] = useState<ReceiptStats>({
     totalReceipts: 0,
     thisMonthReceipts: 0,
@@ -102,6 +118,76 @@ export default function App() {
     } catch (error) {
       console.error('Error updating stats:', error);
     }
+  };
+
+  const loadReceipts = async () => {
+    if (!apiKeys.clientId || !apiKeys.clientSecret || !apiKeys.refreshToken) {
+      Alert.alert('Error', 'Please configure Google Drive API keys in Settings first');
+      return;
+    }
+
+    setLoadingReceipts(true);
+    try {
+      const driveService = new GoogleDriveService(apiKeys);
+      const fetchedReceipts = await driveService.listReceipts();
+      
+      // Sort receipts by date (newest first)
+      const sortedReceipts = fetchedReceipts.sort((a, b) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      
+      setReceipts(sortedReceipts);
+    } catch (error) {
+      console.error('Error loading receipts:', error);
+      Alert.alert(
+        'Error', 
+        `Failed to load receipts: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    } finally {
+      setLoadingReceipts(false);
+    }
+  };
+
+  const openReceipt = (receipt: Receipt) => {
+    Alert.alert(
+      'Open Receipt',
+      `Would you like to view "${receipt.description}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'View in Browser', 
+          onPress: () => {
+            // In a real app, you might use Linking.openURL or a WebView
+            Alert.alert('Info', `Receipt: ${receipt.description}\nDate: ${formatDate(receipt.date)}\nSize: ${formatFileSize(receipt.size)}`);
+          }
+        }
+      ]
+    );
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const groupReceiptsByMonth = (receipts: Receipt[]) => {
+    const grouped: { [key: string]: Receipt[] } = {};
+    
+    receipts.forEach(receipt => {
+      const date = new Date(receipt.date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthName = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+      
+      if (!grouped[monthName]) {
+        grouped[monthName] = [];
+      }
+      grouped[monthName].push(receipt);
+    });
+    
+    return grouped;
   };
 
   const getGreeting = () => {
@@ -268,7 +354,10 @@ export default function App() {
           
           <TouchableOpacity
             style={styles.secondaryButton}
-            onPress={() => Alert.alert('Coming Soon!', 'View receipts feature will be available in the next update.')}
+            onPress={() => {
+              setShowReceiptsList(true);
+              loadReceipts();
+            }}
           >
             <Text style={styles.secondaryButtonIcon}>📁</Text>
             <Text style={styles.secondaryButtonText}>View Receipts</Text>
@@ -403,6 +492,68 @@ export default function App() {
               </TouchableOpacity>
             </View>
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* View Receipts Modal */}
+      <Modal visible={showReceiptsList} animationType="slide">
+        <View style={styles.settingsContainer}>
+          <View style={styles.receiptsHeader}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => setShowReceiptsList(false)}
+            >
+              <Text style={styles.backButtonText}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.receiptsTitle}>Your Receipts</Text>
+            <View style={styles.placeholderButton} />
+          </View>
+
+          {loadingReceipts ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#667eea" />
+              <Text style={styles.loadingText}>Loading receipts...</Text>
+            </View>
+          ) : receipts.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyIcon}>📄</Text>
+              <Text style={styles.emptyTitle}>No Receipts Yet</Text>
+              <Text style={styles.emptyText}>
+                Start capturing receipts to see them organized here by date.
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              style={styles.receiptsList}
+              data={Object.entries(groupReceiptsByMonth(receipts))}
+              keyExtractor={([month]) => month}
+              renderItem={({ item: [month, monthReceipts] }) => (
+                <View style={styles.monthSection}>
+                  <Text style={styles.monthTitle}>{month}</Text>
+                  {monthReceipts.map((receipt) => (
+                    <TouchableOpacity
+                      key={receipt.id}
+                      style={styles.receiptItem}
+                      onPress={() => openReceipt(receipt)}
+                    >
+                      <View style={styles.receiptIcon}>
+                        <Text style={styles.receiptIconText}>📄</Text>
+                      </View>
+                      <View style={styles.receiptInfo}>
+                        <Text style={styles.receiptDescription} numberOfLines={1}>
+                          {receipt.description}
+                        </Text>
+                        <Text style={styles.receiptDate}>
+                          {formatDate(receipt.date)} • {formatFileSize(receipt.size)}
+                        </Text>
+                      </View>
+                      <Text style={styles.receiptArrow}>›</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            />
+          )}
         </View>
       </Modal>
     </View>
@@ -698,5 +849,128 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     marginTop: 20,
+  },
+  receiptsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 50,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  backButton: {
+    backgroundColor: '#667eea',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  backButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  receiptsTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2d3748',
+  },
+  placeholderButton: {
+    width: 70, // Same width as back button for centering
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#718096',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyIcon: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2d3748',
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#718096',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  receiptsList: {
+    flex: 1,
+    padding: 20,
+  },
+  monthSection: {
+    marginBottom: 30,
+  },
+  monthTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2d3748',
+    marginBottom: 16,
+    paddingLeft: 4,
+  },
+  receiptItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  receiptIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f0f4ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  receiptIconText: {
+    fontSize: 20,
+  },
+  receiptInfo: {
+    flex: 1,
+  },
+  receiptDescription: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2d3748',
+    marginBottom: 4,
+  },
+  receiptDate: {
+    fontSize: 14,
+    color: '#718096',
+  },
+  receiptArrow: {
+    fontSize: 20,
+    color: '#cbd5e0',
+    marginLeft: 8,
   },
 });
