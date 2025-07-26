@@ -12,6 +12,9 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Animated,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
 import { Camera, CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
@@ -58,6 +61,77 @@ export default function App() {
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loadingReceipts, setLoadingReceipts] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Image zoom and pan state
+  const [imageScale] = useState(new Animated.Value(1));
+  const [imageTranslateX] = useState(new Animated.Value(0));
+  const [imageTranslateY] = useState(new Animated.Value(0));
+  const [lastScale, setLastScale] = useState(1);
+  const [lastTranslateX, setLastTranslateX] = useState(0);
+  const [lastTranslateY, setLastTranslateY] = useState(0);
+  const [imageLoading, setImageLoading] = useState(false);
+
+  // Pan responder for image zoom and pan
+  const panResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => {
+      imageScale.setOffset(lastScale);
+      imageTranslateX.setOffset(lastTranslateX);
+      imageTranslateY.setOffset(lastTranslateY);
+    },
+    onPanResponderMove: (evt, gestureState) => {
+      const { touches } = evt.nativeEvent;
+      
+      if (touches.length === 2) {
+        // Pinch to zoom
+        const touch1 = touches[0];
+        const touch2 = touches[1];
+        const distance = Math.sqrt(
+          Math.pow(touch2.pageX - touch1.pageX, 2) + 
+          Math.pow(touch2.pageY - touch1.pageY, 2)
+        );
+        
+        if (!panResponder.distance) {
+          panResponder.distance = distance;
+          return;
+        }
+        
+        const scale = distance / panResponder.distance;
+        const newScale = Math.max(0.5, Math.min(scale, 3)); // Limit zoom between 0.5x and 3x
+        imageScale.setValue(newScale);
+      } else if (touches.length === 1 && lastScale > 1) {
+        // Pan when zoomed in
+        imageTranslateX.setValue(gestureState.dx);
+        imageTranslateY.setValue(gestureState.dy);
+      }
+    },
+    onPanResponderRelease: () => {
+      imageScale.flattenOffset();
+      imageTranslateX.flattenOffset();
+      imageTranslateY.flattenOffset();
+      
+      imageScale.addListener(({ value }) => setLastScale(value));
+      imageTranslateX.addListener(({ value }) => setLastTranslateX(value));
+      imageTranslateY.addListener(({ value }) => setLastTranslateY(value));
+      
+      // Reset distance for next pinch gesture
+      panResponder.distance = null;
+    },
+  });
+
+  // Reset image zoom when modal closes
+  const resetImageZoom = () => {
+    setLastScale(1);
+    setLastTranslateX(0);
+    setLastTranslateY(0);
+    setImageLoading(false);
+    imageScale.setValue(1);
+    imageTranslateX.setValue(0);
+    imageTranslateY.setValue(0);
+    setShowImagePreview(false);
+  };
   const [stats, setStats] = useState<ReceiptStats>({
     totalReceipts: 0,
     thisMonthReceipts: 0,
@@ -181,6 +255,20 @@ export default function App() {
     
     return grouped;
   };
+
+  const filterReceipts = (receipts: Receipt[], query: string): Receipt[] => {
+    if (!query.trim()) {
+      return receipts;
+    }
+    
+    const lowercaseQuery = query.toLowerCase();
+    return receipts.filter(receipt => 
+      receipt.description.toLowerCase().includes(lowercaseQuery) ||
+      receipt.name.toLowerCase().includes(lowercaseQuery)
+    );
+  };
+
+  const filteredReceipts = filterReceipts(receipts, searchQuery);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -309,60 +397,66 @@ export default function App() {
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.greeting}>{getGreeting()}</Text>
-        <Text style={styles.welcomeText}>Let's organize your receipts!</Text>
-        
-        {/* Statistics Cards */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{stats.totalReceipts}</Text>
-            <Text style={styles.statLabel}>Total Receipts</Text>
+        <ScrollView 
+          style={styles.scrollContainer} 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.greeting}>{getGreeting()}</Text>
+          <Text style={styles.welcomeText}>Let's organize your receipts!</Text>
+          
+          {/* Statistics Cards */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statCard}>
+              <Text style={styles.statNumber}>{stats.totalReceipts}</Text>
+              <Text style={styles.statLabel}>Total Receipts</Text>
+            </View>
+            
+            <View style={styles.statCard}>
+              <Text style={styles.statNumber}>{stats.thisMonthReceipts}</Text>
+              <Text style={styles.statLabel}>This Month</Text>
+            </View>
           </View>
           
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{stats.thisMonthReceipts}</Text>
-            <Text style={styles.statLabel}>This Month</Text>
+          {/* Last Receipt Info */}
+          <View style={styles.lastReceiptCard}>
+            <Text style={styles.lastReceiptTitle}>📄 Last Receipt</Text>
+            <Text style={styles.lastReceiptDate}>
+              {stats.lastReceiptDate ? formatDate(stats.lastReceiptDate) : 'No receipts yet'}
+            </Text>
           </View>
-        </View>
-        
-        {/* Last Receipt Info */}
-        <View style={styles.lastReceiptCard}>
-          <Text style={styles.lastReceiptTitle}>📄 Last Receipt</Text>
-          <Text style={styles.lastReceiptDate}>
-            {stats.lastReceiptDate ? formatDate(stats.lastReceiptDate) : 'No receipts yet'}
-          </Text>
-        </View>
-        
-        {/* Action Buttons */}
-        <View style={styles.actionContainer}>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => setShowCamera(true)}
-          >
-            <Text style={styles.primaryButtonIcon}>📷</Text>
-            <Text style={styles.primaryButtonText}>Capture Receipt</Text>
-            <Text style={styles.primaryButtonSubtext}>Take a photo and organize it</Text>
-          </TouchableOpacity>
           
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => {
-              setShowReceiptsList(true);
-              loadReceipts();
-            }}
-          >
-            <Text style={styles.secondaryButtonIcon}>📁</Text>
-            <Text style={styles.secondaryButtonText}>View Receipts</Text>
-          </TouchableOpacity>
-        </View>
-        
-        {/* Quick Tips */}
-        <View style={styles.tipsContainer}>
-          <Text style={styles.tipsTitle}>💡 Quick Tip</Text>
-          <Text style={styles.tipsText}>
-            Your receipts are automatically organized by date in Google Drive (receipts/year/month)
-          </Text>
-        </View>
+          {/* Action Buttons */}
+          <View style={styles.actionContainer}>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => setShowCamera(true)}
+            >
+              <Text style={styles.primaryButtonIcon}>📷</Text>
+              <Text style={styles.primaryButtonText}>Capture Receipt</Text>
+              <Text style={styles.primaryButtonSubtext}>Take a photo and organize it</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => {
+                setShowReceiptsList(true);
+                loadReceipts();
+              }}
+            >
+              <Text style={styles.secondaryButtonIcon}>📁</Text>
+              <Text style={styles.secondaryButtonText}>View Receipts</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Quick Tips */}
+          <View style={styles.tipsContainer}>
+            <Text style={styles.tipsTitle}>💡 Quick Tip</Text>
+            <Text style={styles.tipsText}>
+              Your receipts are automatically organized by date in Google Drive (receipts/year/month)
+            </Text>
+          </View>
+        </ScrollView>
       </View>
 
       {/* Camera Modal */}
@@ -493,12 +587,35 @@ export default function App() {
           <View style={styles.receiptsHeader}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => setShowReceiptsList(false)}
+              onPress={() => {
+                setShowReceiptsList(false);
+                setSearchQuery(''); // Clear search when closing
+              }}
             >
               <Text style={styles.backButtonText}>← Back</Text>
             </TouchableOpacity>
             <Text style={styles.receiptsTitle}>Your Receipts</Text>
             <View style={styles.placeholderButton} />
+          </View>
+
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search receipts by name or description..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              clearButtonMode="while-editing"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                style={styles.clearSearchButton}
+                onPress={() => setSearchQuery('')}
+              >
+                <Text style={styles.clearSearchText}>✕</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {loadingReceipts ? (
@@ -514,37 +631,56 @@ export default function App() {
                 Start capturing receipts to see them organized here by date.
               </Text>
             </View>
+          ) : filteredReceipts.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyIcon}>🔍</Text>
+              <Text style={styles.emptyTitle}>No Results Found</Text>
+              <Text style={styles.emptyText}>
+                No receipts match "{searchQuery}". Try a different search term.
+              </Text>
+            </View>
           ) : (
-            <FlatList
-              style={styles.receiptsList}
-              data={Object.entries(groupReceiptsByMonth(receipts))}
-              keyExtractor={([month]) => month}
-              renderItem={({ item: [month, monthReceipts] }) => (
-                <View style={styles.monthSection}>
-                  <Text style={styles.monthTitle}>{month}</Text>
-                  {monthReceipts.map((receipt) => (
-                    <TouchableOpacity
-                      key={receipt.id}
-                      style={styles.receiptItem}
-                      onPress={() => openReceipt(receipt)}
-                    >
-                      <View style={styles.receiptIcon}>
-                        <Text style={styles.receiptIconText}>📄</Text>
-                      </View>
-                      <View style={styles.receiptInfo}>
-                        <Text style={styles.receiptDescription} numberOfLines={1}>
-                          {receipt.description}
-                        </Text>
-                        <Text style={styles.receiptDate}>
-                          {formatDate(receipt.date)} • {formatFileSize(receipt.size)}
-                        </Text>
-                      </View>
-                      <Text style={styles.receiptArrow}>›</Text>
-                    </TouchableOpacity>
-                  ))}
+            <>
+              {/* Search Results Counter */}
+              {searchQuery.length > 0 && (
+                <View style={styles.searchResultsContainer}>
+                  <Text style={styles.searchResultsText}>
+                    Found {filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? 's' : ''} matching "{searchQuery}"
+                  </Text>
                 </View>
               )}
-            />
+              
+              <FlatList
+                style={styles.receiptsList}
+                data={Object.entries(groupReceiptsByMonth(filteredReceipts))}
+                keyExtractor={([month]) => month}
+                renderItem={({ item: [month, monthReceipts] }) => (
+                  <View style={styles.monthSection}>
+                    <Text style={styles.monthTitle}>{month}</Text>
+                    {monthReceipts.map((receipt) => (
+                      <TouchableOpacity
+                        key={receipt.id}
+                        style={styles.receiptItem}
+                        onPress={() => openReceipt(receipt)}
+                      >
+                        <View style={styles.receiptIcon}>
+                          <Text style={styles.receiptIconText}>📄</Text>
+                        </View>
+                        <View style={styles.receiptInfo}>
+                          <Text style={styles.receiptDescription} numberOfLines={1}>
+                            {receipt.description}
+                          </Text>
+                          <Text style={styles.receiptDate}>
+                            {formatDate(receipt.date)} • {formatFileSize(receipt.size)}
+                          </Text>
+                        </View>
+                        <Text style={styles.receiptArrow}>›</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              />
+            </>
           )}
         </View>
       </Modal>
@@ -556,22 +692,72 @@ export default function App() {
             <View style={styles.imagePreviewHeader}>
               <TouchableOpacity
                 style={styles.closeImageButton}
-                onPress={() => setShowImagePreview(false)}
+                onPress={resetImageZoom}
               >
                 <Text style={styles.closeImageButtonText}>✕</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.resetZoomButton}
+                onPress={() => {
+                  setLastScale(1);
+                  setLastTranslateX(0);
+                  setLastTranslateY(0);
+                  Animated.parallel([
+                    Animated.spring(imageScale, { toValue: 1, useNativeDriver: true }),
+                    Animated.spring(imageTranslateX, { toValue: 0, useNativeDriver: true }),
+                    Animated.spring(imageTranslateY, { toValue: 0, useNativeDriver: true }),
+                  ]).start();
+                }}
+              >
+                <Text style={styles.resetZoomButtonText}>Reset</Text>
               </TouchableOpacity>
             </View>
             
             {selectedReceipt && (
               <>
-                <View style={styles.imageContainer}>
-                  <Image
-                    source={{ uri: selectedReceipt.imageUrl }}
-                    style={styles.receiptImage}
+                <View style={styles.imageContainer} {...panResponder.panHandlers}>
+                  {imageLoading && (
+                    <View style={styles.imageLoadingOverlay}>
+                      <ActivityIndicator size="large" color="#fff" />
+                      <Text style={styles.imageLoadingText}>Loading high-quality image...</Text>
+                    </View>
+                  )}
+                  <Animated.Image
+                    source={{ 
+                      uri: selectedReceipt.imageUrl,
+                      cache: 'force-cache', // Enable caching for better performance
+                    }}
+                    style={[
+                      styles.receiptImage,
+                      {
+                        transform: [
+                          { scale: imageScale },
+                          { translateX: imageTranslateX },
+                          { translateY: imageTranslateY },
+                        ],
+                      },
+                    ]}
                     resizeMode="contain"
                     onError={(error) => {
-                      console.error('Image load error:', error);
-                      Alert.alert('Error', 'Failed to load receipt image');
+                      console.error('Image load error details:', {
+                        selectedReceiptId: selectedReceipt?.id,
+                        imageUrl: selectedReceipt?.imageUrl,
+                        errorMessage: error.nativeEvent?.error || 'Unknown error'
+                      });
+                      setImageLoading(false);
+                      Alert.alert(
+                        'Image Load Error', 
+                        `Failed to load receipt image.\n\nURL: ${selectedReceipt?.imageUrl?.substring(0, 60)}...\n\nError: ${error.nativeEvent?.error || 'Unknown error'}\n\nPlease try again or check your internet connection.`,
+                        [{ text: 'OK' }]
+                      );
+                    }}
+                    onLoadStart={() => {
+                      console.log('Started loading high-quality image');
+                      setImageLoading(true);
+                    }}
+                    onLoad={() => {
+                      console.log('High-quality image loaded successfully');
+                      setImageLoading(false);
                     }}
                   />
                 </View>
@@ -580,6 +766,10 @@ export default function App() {
                   <Text style={styles.imagePreviewTitle}>{selectedReceipt.description}</Text>
                   <Text style={styles.imagePreviewDate}>
                     {formatDate(selectedReceipt.date)} • {formatFileSize(selectedReceipt.size)}
+                  </Text>
+                  
+                  <Text style={styles.zoomHint}>
+                    💡 Pinch to zoom • Drag to pan • Tap reset to restore
                   </Text>
                   
                   <TouchableOpacity
@@ -636,7 +826,13 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: 20,
+    paddingBottom: 40, // Extra padding at bottom to ensure content is fully visible
   },
   greeting: {
     fontSize: 28,
@@ -700,11 +896,11 @@ const styles = StyleSheet.create({
     color: '#718096',
   },
   actionContainer: {
-    marginBottom: 25,
+    marginBottom: 20, // Reduced from 25 to 20
   },
   primaryButton: {
     backgroundColor: '#48bb78',
-    padding: 24,
+    padding: 20, // Reduced from 24 to 20
     borderRadius: 16,
     alignItems: 'center',
     marginBottom: 12,
@@ -927,6 +1123,50 @@ const styles = StyleSheet.create({
   placeholderButton: {
     width: 70, // Same width as back button for centering
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#f8f9ff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  clearSearchButton: {
+    position: 'absolute',
+    right: 30,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#cbd5e0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearSearchText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  searchResultsContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#edf2f7',
+  },
+  searchResultsText: {
+    fontSize: 14,
+    color: '#718096',
+    fontStyle: 'italic',
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1031,7 +1271,10 @@ const styles = StyleSheet.create({
   imagePreviewHeader: {
     position: 'absolute',
     top: 50,
+    left: 20,
     right: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     zIndex: 1,
   },
   closeImageButton: {
@@ -1047,11 +1290,42 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
+  resetZoomButton: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  resetZoomButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   imageContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
+    position: 'relative',
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -75 }, { translateY: -40 }],
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    padding: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  imageLoadingText: {
+    color: '#fff',
+    marginTop: 10,
+    fontSize: 14,
+    textAlign: 'center',
   },
   receiptImage: {
     width: '100%',
@@ -1076,7 +1350,14 @@ const styles = StyleSheet.create({
   imagePreviewDate: {
     color: '#cbd5e0',
     fontSize: 16,
+    marginBottom: 8,
+  },
+  zoomHint: {
+    color: '#a0aec0',
+    fontSize: 14,
+    fontStyle: 'italic',
     marginBottom: 16,
+    textAlign: 'center',
   },
   viewInDriveButton: {
     backgroundColor: '#667eea',

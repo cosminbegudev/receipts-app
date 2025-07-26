@@ -16,6 +16,7 @@ interface DriveFile {
 export class GoogleDriveService {
   private config: GoogleDriveConfig;
   private accessToken: string | null = null;
+  private imageUrlCache: Map<string, string> = new Map(); // Cache for image URLs
 
   constructor(config: GoogleDriveConfig) {
     this.config = config;
@@ -313,28 +314,30 @@ export class GoogleDriveService {
             console.log(`Found ${filesData.files?.length || 0} files in ${yearFolder.name}/${monthFolder.name}`);
 
             if (filesData.files && filesData.files.length > 0) {
-              for (const file of filesData.files) {
+              const filePromises = filesData.files.map(async (file) => {
                 // Extract description from filename (everything before the first underscore)
                 const fileName = file.name;
                 const description = fileName.split('_')[0].replace(/[_-]/g, ' ') || 'Receipt';
                 
-                // Create a direct viewable image URL with access token
-                const imageUrl = `https://drive.google.com/uc?id=${file.id}&export=view`;
-                // Alternative: Use the thumbnail link if available, or webViewLink
-                const previewUrl = file.thumbnailLink || imageUrl;
+                // Create a high-quality direct download URL with access token
+                const imageUrl = await this.getHighQualityImageUrl(file.id);
+                console.log(`Generated image URL for ${file.id}: ${imageUrl.substring(0, 80)}...`);
                 
-                receipts.push({
+                return {
                   id: file.id,
                   name: fileName,
                   description: description,
                   date: file.createdTime,
                   webViewLink: file.webViewLink,
                   thumbnailLink: file.thumbnailLink,
-                  imageUrl: previewUrl,
+                  imageUrl: imageUrl,
                   mimeType: file.mimeType,
                   size: parseInt(file.size) || 0,
-                });
-              }
+                };
+              });
+              
+              const monthReceipts = await Promise.all(filePromises);
+              receipts.push(...monthReceipts);
             }
           }
         }
@@ -349,6 +352,76 @@ export class GoogleDriveService {
   }
 
   async getImageUrl(fileId: string): Promise<string> {
+    return this.getHighQualityImageUrl(fileId);
+  }
+
+  async getHighQualityImageUrl(fileId: string): Promise<string> {
+    // Check cache first
+    if (this.imageUrlCache.has(fileId)) {
+      return this.imageUrlCache.get(fileId)!;
+    }
+
+    console.log(`Generating image URL for file: ${fileId}`);
+
+    // Let's use a simple approach that works well with React Native Image
+    // First try to make the file publicly viewable
+    try {
+      await this.makeFilePublic(fileId);
+      // Use the Google Drive direct view URL which works well for images
+      const publicUrl = `https://drive.google.com/uc?export=view&id=${fileId}`;
+      
+      // Cache the URL
+      this.imageUrlCache.set(fileId, publicUrl);
+      console.log(`Generated public image URL: ${publicUrl}`);
+      
+      return publicUrl;
+    } catch (error) {
+      console.error('Error making file public:', error);
+      
+      // Fallback to a simple view URL without making it public
+      const fallbackUrl = `https://drive.google.com/uc?export=view&id=${fileId}`;
+      this.imageUrlCache.set(fileId, fallbackUrl);
+      console.log(`Using fallback image URL: ${fallbackUrl}`);
+      
+      return fallbackUrl;
+    }
+  }
+
+  async makeFilePublic(fileId: string): Promise<void> {
+    const accessToken = await this.getAccessToken();
+    
+    try {
+      console.log(`Making file ${fileId} publicly readable...`);
+      
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            role: 'reader',
+            type: 'anyone'
+          }),
+        }
+      );
+
+      if (response.ok) {
+        console.log(`Successfully made file ${fileId} publicly readable`);
+      } else {
+        const errorData = await response.text();
+        console.log(`Failed to make file public (may already be public): ${response.status} - ${errorData}`);
+        // Don't throw error - file might already be public or we might not have permission
+      }
+    } catch (error) {
+      console.log('Error making file public (continuing anyway):', error);
+      // Don't throw here, let the caller handle it gracefully
+    }
+  }
+
+  async getImageUrlLegacy(fileId: string): Promise<string> {
     const accessToken = await this.getAccessToken();
     
     try {
