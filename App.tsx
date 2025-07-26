@@ -24,6 +24,12 @@ interface ApiKeys {
   refreshToken: string;
 }
 
+interface ReceiptStats {
+  totalReceipts: number;
+  thisMonthReceipts: number;
+  lastReceiptDate: string | null;
+}
+
 export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraRef, setCameraRef] = useState<CameraView | null>(null);
@@ -32,6 +38,11 @@ export default function App() {
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
   const [receiptDescription, setReceiptDescription] = useState('');
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [stats, setStats] = useState<ReceiptStats>({
+    totalReceipts: 0,
+    thisMonthReceipts: 0,
+    lastReceiptDate: null,
+  });
   const [apiKeys, setApiKeys] = useState<ApiKeys>({
     clientId: '',
     clientSecret: '',
@@ -46,6 +57,8 @@ export default function App() {
       
       // Load API keys from storage
       await loadApiKeys();
+      // Load statistics
+      await loadStats();
     })();
   }, []);
 
@@ -58,6 +71,54 @@ export default function App() {
     } catch (error) {
       console.error('Error loading API keys:', error);
     }
+  };
+
+  const loadStats = async () => {
+    try {
+      const stored = await AsyncStorage.getItem('receiptStats');
+      if (stored) {
+        setStats(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
+
+  const updateStats = async () => {
+    try {
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
+      const newStats = {
+        totalReceipts: stats.totalReceipts + 1,
+        thisMonthReceipts: stats.lastReceiptDate && stats.lastReceiptDate.startsWith(currentMonth) 
+          ? stats.thisMonthReceipts + 1 
+          : 1,
+        lastReceiptDate: now.toISOString(),
+      };
+      
+      setStats(newStats);
+      await AsyncStorage.setItem('receiptStats', JSON.stringify(newStats));
+    } catch (error) {
+      console.error('Error updating stats:', error);
+    }
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning! ☀️';
+    if (hour < 17) return 'Good Afternoon! ⛅';
+    return 'Good Evening! 🌙';
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Never';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: 'numeric'
+    });
   };
 
   const saveApiKeys = async () => {
@@ -114,9 +175,12 @@ export default function App() {
         now
       );
       
+      // Update statistics
+      await updateStats();
+      
       Alert.alert(
-        'Success', 
-        `Receipt "${receiptDescription}" saved successfully!\n\nUploaded to: ${result.folderPath}\nGoogle Drive File ID: ${result.fileId}`
+        'Success! 🎉', 
+        `Receipt "${receiptDescription}" saved successfully!\n\nUploaded to: ${result.folderPath}\n\nYour receipts are organized and ready!`
       );
       
       // Reset state
@@ -167,14 +231,57 @@ export default function App() {
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.subtitle}>Capture and organize your receipts</Text>
+        <Text style={styles.greeting}>{getGreeting()}</Text>
+        <Text style={styles.welcomeText}>Let's organize your receipts!</Text>
         
-        <TouchableOpacity
-          style={styles.cameraButton}
-          onPress={() => setShowCamera(true)}
-        >
-          <Text style={styles.cameraButtonText}>📷 Take Receipt Photo</Text>
-        </TouchableOpacity>
+        {/* Statistics Cards */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{stats.totalReceipts}</Text>
+            <Text style={styles.statLabel}>Total Receipts</Text>
+          </View>
+          
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{stats.thisMonthReceipts}</Text>
+            <Text style={styles.statLabel}>This Month</Text>
+          </View>
+        </View>
+        
+        {/* Last Receipt Info */}
+        <View style={styles.lastReceiptCard}>
+          <Text style={styles.lastReceiptTitle}>📄 Last Receipt</Text>
+          <Text style={styles.lastReceiptDate}>
+            {stats.lastReceiptDate ? formatDate(stats.lastReceiptDate) : 'No receipts yet'}
+          </Text>
+        </View>
+        
+        {/* Action Buttons */}
+        <View style={styles.actionContainer}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => setShowCamera(true)}
+          >
+            <Text style={styles.primaryButtonIcon}>📷</Text>
+            <Text style={styles.primaryButtonText}>Capture Receipt</Text>
+            <Text style={styles.primaryButtonSubtext}>Take a photo and organize it</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => Alert.alert('Coming Soon!', 'View receipts feature will be available in the next update.')}
+          >
+            <Text style={styles.secondaryButtonIcon}>📁</Text>
+            <Text style={styles.secondaryButtonText}>View Receipts</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Quick Tips */}
+        <View style={styles.tipsContainer}>
+          <Text style={styles.tipsTitle}>💡 Quick Tip</Text>
+          <Text style={styles.tipsText}>
+            Your receipts are automatically organized by date in Google Drive (receipts/year/month)
+          </Text>
+        </View>
       </View>
 
       {/* Camera Modal */}
@@ -184,23 +291,22 @@ export default function App() {
             style={styles.camera}
             facing="back"
             ref={setCameraRef}
-          >
-            <View style={styles.cameraControls}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setShowCamera(false)}
-              >
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.captureButton}
-                onPress={takePicture}
-              >
-                <Text style={styles.captureButtonText}>📷</Text>
-              </TouchableOpacity>
-            </View>
-          </CameraView>
+          />
+          <View style={styles.cameraControls}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowCamera(false)}
+            >
+              <Text style={styles.buttonText}>Cancel</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.captureButton}
+              onPress={takePicture}
+            >
+              <Text style={styles.captureButtonText}>📷</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
 
@@ -267,7 +373,7 @@ export default function App() {
             <Text style={styles.label}>Redirect URI:</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="e.g., com.yourcompany.receiptsapp://oauth"
+              placeholder="urn:ietf:wg:oauth:2.0:oob"
               value={apiKeys.redirectUri}
               onChangeText={(text: string) => setApiKeys({...apiKeys, redirectUri: text})}
             />
@@ -306,7 +412,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8f9ff',
   },
   header: {
     flexDirection: 'row',
@@ -325,41 +431,144 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#2d3748',
   },
   settingsButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#667eea',
     paddingHorizontal: 15,
     paddingVertical: 8,
     borderRadius: 8,
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     padding: 20,
   },
-  subtitle: {
-    fontSize: 18,
-    color: '#666',
-    marginBottom: 40,
-    textAlign: 'center',
+  greeting: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#2d3748',
+    marginBottom: 8,
   },
-  cameraButton: {
-    backgroundColor: '#34C759',
-    paddingHorizontal: 40,
-    paddingVertical: 20,
-    borderRadius: 12,
+  welcomeText: {
+    fontSize: 16,
+    color: '#718096',
+    marginBottom: 30,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  statCard: {
+    backgroundColor: '#fff',
+    flex: 1,
+    marginHorizontal: 5,
+    padding: 20,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  statNumber: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#667eea',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#718096',
+    fontWeight: '600',
+  },
+  lastReceiptCard: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  lastReceiptTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2d3748',
+    marginBottom: 4,
+  },
+  lastReceiptDate: {
+    fontSize: 14,
+    color: '#718096',
+  },
+  actionContainer: {
+    marginBottom: 25,
+  },
+  primaryButton: {
+    backgroundColor: '#48bb78',
+    padding: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 5,
   },
-  cameraButtonText: {
-    fontSize: 20,
+  primaryButtonIcon: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  primaryButtonText: {
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
+    marginBottom: 4,
+  },
+  primaryButtonSubtext: {
+    fontSize: 14,
+    color: '#c6f6d5',
+  },
+  secondaryButton: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+  },
+  secondaryButtonIcon: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  secondaryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4a5568',
+  },
+  tipsContainer: {
+    backgroundColor: '#edf2f7',
+    padding: 16,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#667eea',
+  },
+  tipsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2d3748',
+    marginBottom: 4,
+  },
+  tipsText: {
+    fontSize: 13,
+    color: '#718096',
+    lineHeight: 18,
   },
   cameraContainer: {
     flex: 1,
@@ -368,12 +577,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cameraControls: {
-    flex: 1,
-    backgroundColor: 'transparent',
+    position: 'absolute',
+    bottom: 20,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    padding: 20,
+    paddingHorizontal: 20,
   },
   captureButton: {
     width: 80,
@@ -400,21 +611,27 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: '#fff',
     padding: 20,
-    borderRadius: 12,
+    borderRadius: 16,
     width: '80%',
     maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
+    color: '#2d3748',
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 16,
     fontSize: 16,
     marginBottom: 20,
     backgroundColor: '#fff',
@@ -424,18 +641,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   cancelButton: {
-    backgroundColor: '#FF3B30',
+    backgroundColor: '#f56565',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     flex: 1,
     marginRight: 10,
   },
   saveButton: {
-    backgroundColor: '#34C759',
+    backgroundColor: '#48bb78',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     flex: 1,
     marginLeft: 10,
   },
@@ -443,26 +660,28 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     textAlign: 'center',
+    fontSize: 16,
   },
   settingsContainer: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8f9ff',
   },
   settingsContent: {
     padding: 20,
     paddingTop: 50,
   },
   settingsTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     marginBottom: 30,
     textAlign: 'center',
+    color: '#2d3748',
   },
   label: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
-    color: '#333',
+    color: '#2d3748',
   },
   settingsButtons: {
     flexDirection: 'row',
@@ -471,6 +690,13 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 18,
-    color: '#333',
+    color: '#2d3748',
+  },
+  cameraButton: {
+    backgroundColor: '#667eea',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 20,
   },
 });

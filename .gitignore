@@ -41,6 +41,7 @@ yarn-error.*
 .idea/
 
 # API Keys (NEVER commit these)
+client_secret_*.json
 google-credentials.json
 .env
 
@@ -66,3 +67,4 @@ temp/
 
 client_secret_130886757579-qmk2ck8ebg88vk4rid19i6qh0fll8aif.apps.googleusercontent.com.json
 client_130886757579-4ppdq37v6f4a42kobr22ukl8qq3o0e3u.apps.googleusercontent.com.plist
+client_secret_130886757579-les9fso4eeqhbat1ak3fe2e2918lcb9n.apps.googleusercontent.com.json

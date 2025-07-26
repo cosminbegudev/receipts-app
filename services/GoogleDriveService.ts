@@ -27,24 +27,32 @@ export class GoogleDriveService {
     }
 
     try {
+      const body = [
+        `client_id=${encodeURIComponent(this.config.clientId)}`,
+        `client_secret=${encodeURIComponent(this.config.clientSecret)}`,
+        `refresh_token=${encodeURIComponent(this.config.refreshToken)}`,
+        `grant_type=refresh_token`
+      ].join('&');
+
+      console.log('Making token request with body length:', body.length);
+      console.log('Client ID starts with:', this.config.clientId.substring(0, 20));
+      console.log('Client Secret starts with:', this.config.clientSecret.substring(0, 10));
+      console.log('Refresh Token starts with:', this.config.refreshToken.substring(0, 20));
+
       const response = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret,
-          refresh_token: this.config.refreshToken,
-          grant_type: 'refresh_token',
-        }),
+        body: body,
       });
 
       const data = await response.json();
+      console.log('Token response:', data);
       
       if (data.access_token) {
         this.accessToken = data.access_token;
-        return this.accessToken;
+        return this.accessToken!;
       } else {
         throw new Error('Failed to get access token: ' + JSON.stringify(data));
       }
