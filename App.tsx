@@ -153,6 +153,8 @@ export default function App() {
       await loadApiKeys();
       // Load statistics
       await loadStats();
+      // Load receipts for last receipt display
+      await loadReceipts();
     })();
   }, []);
 
@@ -419,12 +421,32 @@ export default function App() {
           </View>
           
           {/* Last Receipt Info */}
-          <View style={styles.lastReceiptCard}>
+          <TouchableOpacity 
+            style={styles.lastReceiptCard}
+            onPress={async () => {
+              if (receipts.length === 0) {
+                // Load receipts first if not loaded
+                await loadReceipts();
+              }
+              if (receipts.length > 0) {
+                // Show the most recent receipt
+                openReceipt(receipts[0]);
+              } else {
+                Alert.alert('No Receipts', 'No receipts found. Capture your first receipt to get started!');
+              }
+            }}
+          >
             <Text style={styles.lastReceiptTitle}>📄 Last Receipt</Text>
             <Text style={styles.lastReceiptDate}>
               {stats.lastReceiptDate ? formatDate(stats.lastReceiptDate) : 'No receipts yet'}
             </Text>
-          </View>
+            {receipts.length > 0 && (
+              <Text style={styles.lastReceiptDesc}>
+                {receipts[0].description}
+              </Text>
+            )}
+            <Text style={styles.lastReceiptHint}>Tap to view</Text>
+          </TouchableOpacity>
           
           {/* Action Buttons */}
           <View style={styles.actionContainer}>
@@ -894,6 +916,18 @@ const styles = StyleSheet.create({
   lastReceiptDate: {
     fontSize: 14,
     color: '#718096',
+  },
+  lastReceiptDesc: {
+    fontSize: 14,
+    color: '#4a5568',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  lastReceiptHint: {
+    fontSize: 12,
+    color: '#a0aec0',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   actionContainer: {
     marginBottom: 20, // Reduced from 25 to 20
